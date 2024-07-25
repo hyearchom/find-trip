@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument(
         'place',
         nargs='?',
-        default="Praha",
+        default="New York",
         help="""Add center point in form of address"""
         )
 parser.add_argument(
