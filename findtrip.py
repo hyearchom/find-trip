@@ -1,11 +1,17 @@
 import os.path
 import json
 from random import choice
+import sys
 import argparse
+
+"""Making sure about device support, where 
+Open Street Map module is hard to install
+(et. mobile phones, tablets...)"""
+MODULE_OSMNX = True
 try:
     import osmnx
 except:
-    print("<OpenStreetMap is not used>")
+    MODULE_OSMNX = False
 
 #---Settings---
 
@@ -135,8 +141,11 @@ if __name__ == "__main__":
     
     # if query is new, request to OpenStreetMap for data and save results
     if not cities:
-        cities = cities_within_distance(args.place, args.distance)
-        save_finds(args.place, args.distance, cities, history)
+        if MODULE_OSMNX:
+            cities = cities_within_distance(args.place, args.distance)
+            save_finds(args.place, args.distance, cities, history)
+        else:
+            sys.exit('<Query missing from history, while module OSMNX is not available>')
     
     # if some cities were provided from the script before, they are excluded
     visited = locate_file(VISITED_PATH)
@@ -148,4 +157,4 @@ if __name__ == "__main__":
     
     # selected city is being displayed and saved for future exclusion from results
     save_visited_city(target_city, visited)
-    print(f"Visit '{target_city}'")
+    print(f"Visit ---> '{target_city}'")
