@@ -2,9 +2,9 @@
 
 #### Quick start:
 
-`git clone https://github.com/hyearchom/find-trip
-`pip install osmnx
-`python findtrip --place 'Washigton' --distance 20
+`git clone https://github.com/hyearchom/find-trip`
+`pip install osmnx`
+`python findtrip --place 'Washigton' --distance 20`
 
 - Use terminal with python and wheel to run the script
     
