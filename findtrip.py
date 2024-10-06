@@ -3,6 +3,7 @@ import json
 from random import choice
 import sys
 import argparse
+import webbrowser
 
 """Making sure about device support, where 
 Open Street Map module is hard to install
@@ -156,5 +157,8 @@ if __name__ == "__main__":
         target_city = choose_nonvisited_city(cities)
     
     # selected city is being displayed and saved for future exclusion from results
-    save_visited_city(target_city, visited)
+    
     print(f"Visit ---> '{target_city}'")
+    webbrowser.open(f'https://www.openstreetmap.org/search?query={target_city}')
+
+    save_visited_city(target_city, visited)
