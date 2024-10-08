@@ -17,14 +17,20 @@
 ### Line arguments:
 
 - `--place [-p]`
-    
 	- original point as center for searching nearby settlements
 	- form should be address or part of address
 	- example: 'New York', 'Times Square, New York', London
 	- use quotation marks if you want to type addresses with multiple words
-	- optional argument, default value is 'New York'
+	- optional argument after setting default value (via`--home` argument)
 
 - `--distance [-d]` 
 	- distance from the place of origin where algoritmus is searching
 	- unit is kilometer
 	- optional argument, default value is '20'
+	
+- `--home`
+	- saves default value for `--place` argument and ends script
+
+- `--no_history [-n]`
+	- prevent script from saving anything into data folder after search
+	- this does not effect OSMX module, which creates cache folder by default if you try to search from a new place
