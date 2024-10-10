@@ -9,13 +9,18 @@ import webbrowser
 """Making sure about device support, where 
 Open Street Map module is hard to install
 (et. mobile phones, tablets...)"""
-MODULE_OSMNX = True
 try:
     import osmnx
-except:
-    MODULE_OSMNX = False
+    module_osmnx = True
+except ModuleNotFoundError:
+    module_osmnx = False
 
 #---Settings---
+
+# Points of interest
+
+PLACES = {'place': ['city', 'town', 'village']}
+FEATURES = {'board_type': ['history', 'nature', 'sight', 'geology', 'geography']}
 
 # Location of source files
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -63,19 +68,11 @@ def choose_nonvisited_city(options, exclude=None):
     return choice(selection)
 
 
-def cities_within_distance(origin, max_distance):
-    """Find all cities within a specified distance from a point of origin"""
-    # Ask OpenStreetMap to find coordinates of the origin
-    center_coords = osmnx.geocoder.geocode(origin)
-    if not center_coords:
-        return f"Address '{origin}' not found."
-    
-    # Ask OpenStreetMap for cities, towns, and villages within the bounding box
-    database = osmnx.features.features_from_point(
-            center_coords, 
-            dist=max_distance *1000,
-            tags={'place': ['city', 'town', 'village']})
-    
+def cities_within_distance_from_address(origin, max_distance):
+    """Ask OpenStreetMap for cities, towns, and villages within the bounding box"""
+    center_coords = coords_from_address(origin)
+    database = places_within_distance_from_coords(center_coords, max_distance, PLACES)
+
     # Filter the results by actual distance
     nearby_cities = []
     for _, row in database.iterrows():
@@ -85,6 +82,23 @@ def cities_within_distance(origin, max_distance):
         if distance < max_distance:
             nearby_cities.append(city_name)    
     return nearby_cities
+
+
+def places_within_distance_from_coords(center_coords, max_distance, places):
+    """Find all points of interest within a specified distance from a point of origin"""
+    database = osmnx.features.features_from_point(
+        center_coords,
+        dist=max_distance *1000,
+        tags=places)
+    return database
+
+
+def coords_from_address(origin):
+    """Ask OpenStreetMap to find coordinates of the origin"""
+    center_coords = osmnx.geocoder.geocode(origin)
+    if not center_coords:
+        sys.exit(f"<Address '{origin}' not found.>")
+    return center_coords
 
 
 def save_finds(center, limit, array, file_present):
@@ -179,8 +193,8 @@ if __name__ == "__main__":
     
     # if query is new, request to OpenStreetMap for data and save results
     if not cities:
-        if MODULE_OSMNX:
-            cities = cities_within_distance(args.place, args.distance)
+        if module_osmnx:
+            cities = cities_within_distance_from_address(args.place, args.distance)
             if not args.no_history:
                 save_finds(args.place, args.distance, cities, history)
         else:
@@ -195,9 +209,20 @@ if __name__ == "__main__":
         target_city = choose_nonvisited_city(cities)
     
     # selected city is being displayed and saved for future exclusion from results
-    
-    print(f"Visit ---> '{target_city}'")
-    webbrowser.open(f'https://www.openstreetmap.org/search?query={target_city}')
-
     if not args.no_history:
         save_visited_city(target_city, visited)
+
+    print(f"\nVisit ---> '{target_city}'", end='\n\n')
+    # find points of interest around target city
+
+    if module_osmnx:
+        center_coords = coords_from_address(target_city)
+        database = places_within_distance_from_coords(center_coords, 5, FEATURES)
+
+        print('---You can see ---')
+        for record in database['name'][:5]:
+            print(record)
+        print()
+
+    input('Press any key to show city on map')
+    webbrowser.open(f'https://www.openstreetmap.org/search?query={target_city}')
