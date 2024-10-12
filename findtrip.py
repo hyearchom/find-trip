@@ -1,6 +1,7 @@
+#!/usr/bin/env python3
+# the previous line is for unix systems and can be freely deleted
 import os.path
 import json
-from email.policy import default
 from random import choice
 import sys
 import argparse
@@ -20,14 +21,17 @@ except ModuleNotFoundError:
 # Points of interest
 
 PLACES = {'place': ['city', 'town', 'village']}
-FEATURES = {'board_type': ['history', 'nature', 'sight', 'geology', 'geography']}
+FEATURES = {'board_type': True}
 
 # Location of source files
-FILE_PATH = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = 'settings'
-HISTORY_PATH = os.path.join(FILE_PATH, DATA_PATH, 'findtrip_history.dat')
-VISITED_PATH = os.path.join(FILE_PATH, DATA_PATH, 'findtrip_visited.dat')
-HOME_PATH = os.path.join(FILE_PATH, DATA_PATH, 'findtrip_home.dat')
+SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
+SETTINGS_PATH = os.path.join(SCRIPT_PATH, 'settings/findtrip')
+# looking for necessary folders, or creating it
+os.makedirs(SETTINGS_PATH, exist_ok=True)
+
+HISTORY_PATH = os.path.join(SCRIPT_PATH, SETTINGS_PATH, 'history.dat')
+VISITED_PATH = os.path.join(SCRIPT_PATH, SETTINGS_PATH, 'visited.dat')
+HOME_PATH = os.path.join(SCRIPT_PATH, SETTINGS_PATH, 'home.dat')
 
 # Line args
 parser = argparse.ArgumentParser(
@@ -68,37 +72,34 @@ def choose_nonvisited_city(options, exclude=None):
     return choice(selection)
 
 
-def cities_within_distance_from_address(origin, max_distance):
-    """Ask OpenStreetMap for cities, towns, and villages within the bounding box"""
-    center_coords = coords_from_address(origin)
-    database = places_within_distance_from_coords(center_coords, max_distance, PLACES)
-
-    # Filter the results by actual distance
-    nearby_cities = []
-    for _, row in database.iterrows():
-        city_name = row.get('name')
-        city_coords = (row.geometry.centroid.y, row.geometry.centroid.x)
-        distance = osmnx.distance.great_circle(*center_coords, *city_coords) /1_000.0
-        if distance < max_distance:
-            nearby_cities.append(city_name)    
-    return nearby_cities
-
-
-def places_within_distance_from_coords(center_coords, max_distance, places):
+def places_within_distance_from_address(address, max_distance, places, limit=None):
     """Find all points of interest within a specified distance from a point of origin"""
-    database = osmnx.features.features_from_point(
-        center_coords,
+    database = osmnx.features.features_from_address(
+        address=address,
         dist=max_distance *1000,
         tags=places)
-    return database
+    
+    names = []
+    for record in database['name']:
+        if type(record) == str:
+            names.append(record)
+        if limit and len(names) == limit:
+            break
+    return names
 
 
 def coords_from_address(origin):
     """Ask OpenStreetMap to find coordinates of the origin"""
     center_coords = osmnx.geocoder.geocode(origin)
     if not center_coords:
-        sys.exit(f"<Address '{origin}' not found.>")
+        show_message_and_exit(f"<Address '{origin}' not found.>")
     return center_coords
+
+
+def show_message_and_exit(message):
+    print(message)
+    input("Press any key to exit")
+    sys.exit()
 
 
 def save_finds(center, limit, array, file_present):
@@ -115,6 +116,9 @@ def save_finds(center, limit, array, file_present):
 
 def read_data(file_name):
     """Reading data from data files"""
+    if not locate_file(file_name):
+        return
+
     container = ''
     if file_name == HISTORY_PATH:
         container = '{{{}}}'
@@ -175,54 +179,49 @@ if __name__ == "__main__":
     # if setting home was initialized
     if args.home:
         save_home_address(args.home)
-        sys.exit('<Home address have been set and will be used, if place is not mentioned>')
+        show_message_and_exit('<Home address have been set. It will be used if place is not mentioned>')
 
     # use of saved home address
     if not args.place:
         home = read_data(HOME_PATH)
         if not home:
-            sys.exit('<Place or home have not been set>')
+            show_message_and_exit('<Place or home have not been set>')
         args.place = home
     
     # cheching if same query was requested before
     cities = ''
-    history = locate_file(HISTORY_PATH)
+    history = read_data(HISTORY_PATH)
     if history:
-        previous_finds = read_data(HISTORY_PATH)
-        cities = return_request_from_history(args.place, args.distance, previous_finds)
+        cities = return_request_from_history(args.place, args.distance, history)
     
     # if query is new, request to OpenStreetMap for data and save results
     if not cities:
         if module_osmnx:
-            cities = cities_within_distance_from_address(args.place, args.distance)
+            cities = places_within_distance_from_address(args.place, args.distance, PLACES)
             if not args.no_history:
                 save_finds(args.place, args.distance, cities, history)
         else:
-            sys.exit('<Query missing from history, while module OSMNX is not available>')
+            show_message_and_exit('<Query missing from history, while module OSMNX is not available>')
     
     # if some cities were selected by the script before, they are excluded
-    visited = locate_file(VISITED_PATH)
-    if visited:
-        exclude_cities = read_data(VISITED_PATH)
-        target_city = choose_nonvisited_city(cities, exclude_cities)
-    else:
-        target_city = choose_nonvisited_city(cities)
+    visited = read_data(VISITED_PATH)
+    target_city = choose_nonvisited_city(cities, visited)
     
     # selected city is being displayed and saved for future exclusion from results
+    print(f"Visit ---> '{target_city}'", end='\n\n')
     if not args.no_history:
         save_visited_city(target_city, visited)
-
-    print(f"\nVisit ---> '{target_city}'", end='\n\n')
+    
     # find points of interest around target city
-
     if module_osmnx:
-        center_coords = coords_from_address(target_city)
-        database = places_within_distance_from_coords(center_coords, 5, FEATURES)
+        for point in places_within_distance_from_address(target_city, 5, FEATURES, 5):
+            print(point)
 
-        print('---You can see ---')
-        for record in database['name'][:5]:
-            print(record)
-        print()
-
-    input('Press any key to show city on map')
-    webbrowser.open(f'https://www.openstreetmap.org/search?query={target_city}')
+    # offer display on map and exit
+    try:
+        input('\nPress Ctrl+C to show place on map or something else to exit')
+    except KeyboardInterrupt:
+        print('\n<Opening map in webrowser>')
+        webbrowser.open(f'https://www.openstreetmap.org/search?query={target_city}')
+    finally:
+        print('\nHave a nice trip!')
