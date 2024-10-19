@@ -6,6 +6,7 @@ from random import choice
 import sys
 import argparse
 import webbrowser
+import folium
 
 """Making sure about device support, where 
 Open Street Map module is hard to install
@@ -85,7 +86,7 @@ def places_within_distance_from_address(address, max_distance, places, limit=Non
             names.append(record)
         if limit and len(names) == limit:
             break
-    return names
+    return names, database
 
 
 def coords_from_address(origin):
@@ -187,34 +188,49 @@ if __name__ == "__main__":
         if not home:
             show_message_and_exit('<Place or home have not been set>')
         args.place = home
-    
-    # cheching if same query was requested before
-    cities = ''
+
+    city_names = ''
+    city_details = []
     history = read_data(HISTORY_PATH)
-    if history:
-        cities = return_request_from_history(args.place, args.distance, history)
-    
-    # if query is new, request to OpenStreetMap for data and save results
-    if not cities:
-        if module_osmnx:
-            cities = places_within_distance_from_address(args.place, args.distance, PLACES)
-            if not args.no_history:
-                save_finds(args.place, args.distance, cities, history)
+
+    # request to OpenStreetMap for data and save results
+    if module_osmnx:
+        city_names, city_details = places_within_distance_from_address(args.place, args.distance, PLACES)
+        if not args.no_history:
+            save_finds(args.place, args.distance, city_names, history)
+    else:
+        if history:
+            city_names = return_request_from_history(args.place, args.distance, history)
         else:
             show_message_and_exit('<Query missing from history, while module OSMNX is not available>')
     
     # if some cities were selected by the script before, they are excluded
     visited = read_data(VISITED_PATH)
-    target_city = choose_nonvisited_city(cities, visited)
+    target_city = choose_nonvisited_city(city_names, visited)
     
-    # selected city is being displayed and saved for future exclusion from results
-    print(f"Visit ---> '{target_city}'", end='\n\n')
+    # selected city is being saved for future exclusion from results
     if not args.no_history:
         save_visited_city(target_city, visited)
-    
+
+    # find target city coordinates
+    target_city_coords = []
+    if city_details.any:
+        geometry = city_details[city_details.name == target_city].geometry
+        target_city_coords = [geometry.centroid.y.iloc[0], geometry.centroid.x.iloc[0]]
+    elif module_osmnx:
+        target_city_coords = list(coords_from_address(target_city))
+
+    # create map with location of the city
+    map_image = folium.Map(target_city_coords, zoom_start=15)
+    map_image.save(f'{target_city}.html')
+
+    # show result
+    print(f"Visit ---> '{target_city}'", end='\n\n')
+
     # find points of interest around target city
     if module_osmnx:
-        for point in places_within_distance_from_address(target_city, 5, FEATURES, 5):
+        points,_ = places_within_distance_from_address(target_city, 5, FEATURES, 5)
+        for point in points:
             print(point)
 
     # offer display on map and exit
@@ -222,6 +238,6 @@ if __name__ == "__main__":
         input('\nPress Ctrl+C to show place on map or something else to exit')
     except KeyboardInterrupt:
         print('\n<Opening map in webrowser>')
-        webbrowser.open(f'https://www.openstreetmap.org/search?query={target_city}')
+        webbrowser.open(f'{target_city}.html')
     finally:
         print('\nHave a nice trip!')
