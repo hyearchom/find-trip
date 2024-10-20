@@ -8,8 +8,7 @@ import argparse
 import webbrowser
 import folium
 
-"""Making sure about device support, where 
-Open Street Map module is hard to install
+"""Making sure about device support, where Open Street Map module is hard to install
 (et. mobile phones, tablets...)"""
 try:
     import osmnx
@@ -21,8 +20,8 @@ except ModuleNotFoundError:
 
 # Points of interest
 
-PLACES = {'place': ['city', 'town', 'village']}
-FEATURES = {'board_type': True}
+CITY_TAGS = {'place': ['city', 'town', 'village']}
+POINT_TAGS = {'board_type': True}
 
 # Location of source files
 SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -62,7 +61,7 @@ parser.add_argument(
 
 #---Code---
 
-def choose_nonvisited_city(options, exclude=None):
+def choose_unvisited_city(options, exclude=None):
     """Random selection of the city from possible targets, excluding
     already visited cities if they are any"""
     if exclude:
@@ -73,28 +72,38 @@ def choose_nonvisited_city(options, exclude=None):
     return choice(selection)
 
 
-def places_within_distance_from_address(address, max_distance, places, limit=None):
+def cities_within_distance_from_address(address, max_distance):
     """Find all points of interest within a specified distance from a point of origin"""
     database = osmnx.features.features_from_address(
         address=address,
         dist=max_distance *1000,
-        tags=places)
-    
-    names = []
+        tags=CITY_TAGS)
+    return database
+
+
+def points_within_distance_from_cords(cords, max_distance):
+    """Find all points of interest within a specified distance from a point of origin"""
+    database = osmnx.features_from_point(
+        center_point=cords,
+        dist=max_distance *1000,
+        tags=POINT_TAGS)
+    return database
+
+
+def names_from_database(database):
+    result = []
     for record in database['name']:
         if type(record) == str:
-            names.append(record)
-        if limit and len(names) == limit:
-            break
-    return names, database
+            result.append(record)
+    return result
 
 
-def coords_from_address(origin):
+def cords_from_address(origin):
     """Ask OpenStreetMap to find coordinates of the origin"""
-    center_coords = osmnx.geocoder.geocode(origin)
-    if not center_coords:
+    center_cords = osmnx.geocoder.geocode(origin)
+    if not center_cords:
         show_message_and_exit(f"<Address '{origin}' not found.>")
-    return center_coords
+    return center_cords
 
 
 def show_message_and_exit(message):
@@ -116,7 +125,7 @@ def save_finds(center, limit, array, file_present):
 
 
 def read_data(file_name):
-    """Reading data from data files"""
+    """Reading data from files on disk"""
     if not locate_file(file_name):
         return
 
@@ -172,15 +181,38 @@ def save_home_address(address):
         file.write(address)
 
 
+def cords_from_database(name, database):
+    """Extracting longitude and latitude of targeted record
+     from given GeoDataFrame object, commonly given by osmnx module"""
+    geometry = database[database.name == name].geometry.iloc[0]
+    cords = cords_from_geometry(geometry)
+    return cords
+
+def cords_from_geometry(geometry):
+    """Extracting longitude and latitude from Point object"""
+    return [geometry.centroid.y, geometry.centroid.x]
+
+
+def add_marker_to_map(cords, name, map, type='blue'):
+    folium.Marker(
+        location=cords,
+        tooltip="Click for details",
+        popup=name,
+        icon=folium.Icon(color=type),
+    ).add_to(map)
+
+
 #---Execution---
 
 if __name__ == "__main__":
     args = parser.parse_args() # get line arguments
 
-    # if setting home was initialized
+    # if setting home was initialized, only this block is being executed
     if args.home:
         save_home_address(args.home)
         show_message_and_exit('<Home address have been set. It will be used if place is not mentioned>')
+
+    # --End of execution if using line argument to set home address--
 
     # use of saved home address
     if not args.place:
@@ -195,7 +227,8 @@ if __name__ == "__main__":
 
     # request to OpenStreetMap for data and save results
     if module_osmnx:
-        city_names, city_details = places_within_distance_from_address(args.place, args.distance, PLACES)
+        city_details = cities_within_distance_from_address(args.place, args.distance)
+        city_names = names_from_database(city_details)
         if not args.no_history:
             save_finds(args.place, args.distance, city_names, history)
     else:
@@ -206,38 +239,44 @@ if __name__ == "__main__":
     
     # if some cities were selected by the script before, they are excluded
     visited = read_data(VISITED_PATH)
-    target_city = choose_nonvisited_city(city_names, visited)
+    target_city = choose_unvisited_city(city_names, visited)
     
     # selected city is being saved for future exclusion from results
     if not args.no_history:
         save_visited_city(target_city, visited)
 
-    # find target city coordinates
-    target_city_coords = []
-    if city_details.any:
-        geometry = city_details[city_details.name == target_city].geometry
-        target_city_coords = [geometry.centroid.y.iloc[0], geometry.centroid.x.iloc[0]]
-    elif module_osmnx:
-        target_city_coords = list(coords_from_address(target_city))
-
-    # create map with location of the city
-    map_image = folium.Map(target_city_coords, zoom_start=15)
-    map_image.save(f'{target_city}.html')
-
     # show result
     print(f"Visit ---> '{target_city}'", end='\n\n')
 
+    # find target city coordinates
+    target_city_cords = []
+    if city_details.any:
+        target_city_cords = cords_from_database(target_city, city_details)
+    else:
+        show_message_and_exit('<Cannot offer more details without osmnx module>')
+
+    # -- End of execution without osmnx module (phones, tablets...)--
+
+    # create map with location of the city
+    local_map = folium.Map(target_city_cords, zoom_start=14)
+    add_marker_to_map(target_city_cords, target_city, local_map, 'red')
+
     # find points of interest around target city
     if module_osmnx:
-        points,_ = places_within_distance_from_address(target_city, 5, FEATURES, 5)
-        for point in points:
-            print(point)
-
-    # offer display on map and exit
+        point_details = points_within_distance_from_cords(tuple(target_city_cords), 3)
+        for row in point_details.itertuples():
+            name = row.name
+            location = cords_from_geometry(row.geometry)
+            add_marker_to_map(location, name, local_map, 'green')
+            # display name of point
+            print(name)
+ 
+    # offer display of map and exit
     try:
         input('\nPress Ctrl+C to show place on map or something else to exit')
     except KeyboardInterrupt:
-        print('\n<Opening map in webrowser>')
+        local_map.save(f'{target_city}.html')
+        print('\n<Opening map in webbrowser>')
         webbrowser.open(f'{target_city}.html')
     finally:
         print('\nHave a nice trip!')
