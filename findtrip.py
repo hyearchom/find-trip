@@ -18,14 +18,18 @@ except ModuleNotFoundError:
 
 #---Settings---
 
-# Points of interest
-
-CITY_TAGS = {'place': ['city', 'town', 'village']}
-POINT_TAGS = {'board_type': True}
+# Constants
+CITY_TAGS = {'place': ['city', 'town', 'village']} # tag to identify target center point
+POINT_TAGS = {'board_type': True} # tag to identify point of interest
+POINT_DISTANCE = 3 # distance for points of interested from target city in km
+MAP_ZOOM = 14 # default map close up in browser
+CITY_MARKER_COLOR = 'red' # color to mark target city
+POINT_MARKER_COLOR = 'green' # color to mark points of interest
 
 # Location of source files
 SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_PATH = os.path.join(SCRIPT_PATH, 'settings/findtrip')
+
 # looking for necessary folders, or creating it
 os.makedirs(SETTINGS_PATH, exist_ok=True)
 
@@ -34,9 +38,10 @@ VISITED_PATH = os.path.join(SCRIPT_PATH, SETTINGS_PATH, 'visited.dat')
 HOME_PATH = os.path.join(SCRIPT_PATH, SETTINGS_PATH, 'home.dat')
 
 # Line args
+
 parser = argparse.ArgumentParser(
     prog='Find Trip',
-    description='Get random city in given distance'
+    description='Show random city in given distance and tourism points around on map'
     )
 parser.add_argument(
     '-p', '--place',
@@ -91,6 +96,7 @@ def points_within_distance_from_cords(cords, max_distance):
 
 
 def names_from_database(database):
+    """Return all names from GeoDataFrame object"""
     result = []
     for record in database['name']:
         if type(record) == str:
@@ -107,6 +113,7 @@ def cords_from_address(origin):
 
 
 def show_message_and_exit(message):
+    """Exit execution with a message for a user"""
     print(message)
     input("Press any key to exit")
     sys.exit()
@@ -188,12 +195,14 @@ def cords_from_database(name, database):
     cords = cords_from_geometry(geometry)
     return cords
 
+
 def cords_from_geometry(geometry):
     """Extracting longitude and latitude from Point object"""
     return [geometry.centroid.y, geometry.centroid.x]
 
 
 def add_marker_to_map(cords, name, map, type='blue'):
+    """Add marked position into the given map with optional color"""
     folium.Marker(
         location=cords,
         tooltip="Click for details",
@@ -205,27 +214,26 @@ def add_marker_to_map(cords, name, map, type='blue'):
 #---Execution---
 
 if __name__ == "__main__":
-    args = parser.parse_args() # get line arguments
+    # extract line arguments from user
+    args = parser.parse_args()
 
-    # if setting home was initialized, only this block is being executed
+    # if setting home was requested by user, only this block is being executed
     if args.home:
         save_home_address(args.home)
         show_message_and_exit('<Home address have been set. It will be used if place is not mentioned>')
 
-    # --End of execution if using line argument to set home address--
-
-    # use of saved home address
+    # use of saved home address if place is not provided by user
     if not args.place:
         home = read_data(HOME_PATH)
         if not home:
             show_message_and_exit('<Place or home have not been set>')
         args.place = home
 
+    # search for random target city
     city_names = ''
     city_details = []
     history = read_data(HISTORY_PATH)
 
-    # request to OpenStreetMap for data and save results
     if module_osmnx:
         city_details = cities_within_distance_from_address(args.place, args.distance)
         city_names = names_from_database(city_details)
@@ -253,30 +261,28 @@ if __name__ == "__main__":
     if city_details.any:
         target_city_cords = cords_from_database(target_city, city_details)
     else:
+        # end of execution without osmnx module (phones, tablets...)
         show_message_and_exit('<Cannot offer more details without osmnx module>')
 
-    # -- End of execution without osmnx module (phones, tablets...)--
-
     # create map with location of the city
-    local_map = folium.Map(target_city_cords, zoom_start=14)
-    add_marker_to_map(target_city_cords, target_city, local_map, 'red')
+    local_map = folium.Map(target_city_cords, zoom_start=MAP_ZOOM)
+    add_marker_to_map(target_city_cords, target_city, local_map, CITY_MARKER_COLOR)
 
     # find points of interest around target city
-    if module_osmnx:
-        point_details = points_within_distance_from_cords(tuple(target_city_cords), 3)
-        for row in point_details.itertuples():
-            name = row.name
-            location = cords_from_geometry(row.geometry)
-            add_marker_to_map(location, name, local_map, 'green')
-            # display name of point
+    point_details = points_within_distance_from_cords(tuple(target_city_cords), POINT_DISTANCE)
+    for row in point_details.itertuples():
+        name = row.name
+        location = cords_from_geometry(row.geometry)
+        add_marker_to_map(location, name, local_map, POINT_MARKER_COLOR)
+        # display name of point if possible
+        if type(name) is str:
             print(name)
- 
+
+    # save map on disk
+    map_path = os.path.join(SETTINGS_PATH, f'{target_city}.html')
+    local_map.save(map_path)
+
     # offer display of map and exit
-    try:
-        input('\nPress Ctrl+C to show place on map or something else to exit')
-    except KeyboardInterrupt:
-        local_map.save(f'{target_city}.html')
-        print('\n<Opening map in webbrowser>')
-        webbrowser.open(f'{target_city}.html')
-    finally:
-        print('\nHave a nice trip!')
+    print('\nHave a nice trip!')
+    input('\nPress Ctrl+C to exit, or anything else to display map ')
+    webbrowser.open(map_path)
