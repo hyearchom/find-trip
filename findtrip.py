@@ -21,7 +21,7 @@ except ModuleNotFoundError:
 # Constants
 CITY_TAGS = {'place': ['city', 'town', 'village']} # tag to identify target center point
 POINT_TAGS = {'board_type': True} # tag to identify point of interest
-POINT_DISTANCE = 3 # distance for points of interested from target city in km
+POINT_DISTANCE = 5 # distance for points of interested from target city in km
 MAP_ZOOM = 14 # default map close up in browser
 CITY_MARKER_COLOR = 'red' # color to mark target city
 POINT_MARKER_COLOR = 'green' # color to mark points of interest

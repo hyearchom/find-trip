@@ -6,14 +6,18 @@
 `pip install osmnx`
 `python findtrip --place 'Washigton' --distance 20`
 
-- Use terminal with python and wheel to run the script
+- Use powershell with python to run the script
     
 #### Description:
 
-- This script finds random city from given point within distance
-- Can be run without internet connection or on devices, where Open Street Map module is hard to install (et. mobile phones, tablets...)
-- Previous result are saved in file `.dat` files and need to transfered to be used in cached version
+- This script finds random city from given point within distance and points of interests around it
+- Everything is shown on the generated map which is saved withing the setting folder
+- Previous result are saved in file `.dat` files and need to transfered to be used in "cached" version
+- Script can choose random city without internet connection or on devices where Open Street Map module is hard to install (et. mobile phones, tablets...) **if history file is present in setting folder**
 
+#### Output:
+
+![Target city example](map_example.png)
 ### Line arguments:
 
 - `--place [-p]`
