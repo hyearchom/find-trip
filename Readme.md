@@ -28,9 +28,14 @@
 	- optional argument after setting default value (via`--home` argument)
 
 - `--distance [-d]` 
-	- distance from the place of origin where algoritmus is searching
+	- distance from the place of origin where algoritmus is searching for target city
 	- unit is kilometer
 	- optional argument, default value is '20'
+
+- `--point_distance [-pd]` 
+	- distance from target city where algoritmus is searching for points of interest
+	- unit is kilometer
+	- optional argument, default value is '3'
 	
 - `--home`
 	- saves default value for `--place` argument and ends script

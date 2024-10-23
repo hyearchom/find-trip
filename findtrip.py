@@ -7,7 +7,7 @@ import sys
 import argparse
 import webbrowser
 import folium
-
+from geopandas import GeoDataFrame
 """Making sure about device support, where Open Street Map module is hard to install
 (et. mobile phones, tablets...)"""
 try:
@@ -21,7 +21,7 @@ except ModuleNotFoundError:
 # Constants
 CITY_TAGS = {'place': ['city', 'town', 'village']} # tag to identify target center point
 POINT_TAGS = {'board_type': True} # tag to identify point of interest
-POINT_DISTANCE = 5 # distance for points of interested from target city in km
+
 MAP_ZOOM = 14 # default map close up in browser
 CITY_MARKER_COLOR = 'red' # color to mark target city
 POINT_MARKER_COLOR = 'green' # color to mark points of interest
@@ -51,7 +51,13 @@ parser.add_argument(
     '-d', '--distance',
     type=int,
     default=20,
-    help="""Set required distance in kilometers""",
+    help="""Set maximum distance to locate target city (in kilometers)""",
+    )
+parser.add_argument(
+    '-pd', '--point_distance',
+    type=int,
+    default=3,
+    help="""Set maximum distance around target city to locate points of interest (in kilometers)""",
     )
 parser.add_argument(
     '--home',
@@ -79,20 +85,27 @@ def choose_unvisited_city(options, exclude=None):
 
 def cities_within_distance_from_address(address, max_distance):
     """Find all points of interest within a specified distance from a point of origin"""
-    database = osmnx.features.features_from_address(
-        address=address,
-        dist=max_distance *1000,
-        tags=CITY_TAGS)
-    return database
+    try:
+        database = osmnx.features.features_from_address(
+            address=address,
+            dist=max_distance *1000,
+            tags=CITY_TAGS)
+        return database
+    except osmnx._errors.InsufficientResponseError:
+        message_and_exit('<No cities found within specified distance>')
 
 
-def points_within_distance_from_cords(cords, max_distance):
+def points_within_distance_from_coords(coords, max_distance):
     """Find all points of interest within a specified distance from a point of origin"""
-    database = osmnx.features_from_point(
-        center_point=cords,
-        dist=max_distance *1000,
-        tags=POINT_TAGS)
-    return database
+    try:
+        database = osmnx.features_from_point(
+            center_point=coords,
+            dist=max_distance *1000,
+            tags=POINT_TAGS)
+        return database
+    except osmnx._errors.InsufficientResponseError:
+        print('<No points of interest found in database>')
+        return None
 
 
 def names_from_database(database):
@@ -104,15 +117,15 @@ def names_from_database(database):
     return result
 
 
-def cords_from_address(origin):
+def coords_from_address(origin):
     """Ask OpenStreetMap to find coordinates of the origin"""
-    center_cords = osmnx.geocoder.geocode(origin)
-    if not center_cords:
-        show_message_and_exit(f"<Address '{origin}' not found.>")
-    return center_cords
+    center_coords = osmnx.geocoder.geocode(origin)
+    if not center_coords:
+        message_and_exit(f"<Address '{origin}' not found.>")
+    return center_coords
 
 
-def show_message_and_exit(message):
+def message_and_exit(message):
     """Exit execution with a message for a user"""
     print(message)
     input("Press any key to exit")
@@ -143,14 +156,14 @@ def read_data(file_name):
         container = '[{}]'
 
     with open(file_name, "r", newline="") as file:
-        records = file.read()
+        recoords = file.read()
         if container:
-            return json.loads(container.format(records))
+            return json.loads(container.format(recoords))
         else:
             # deleting unwanted characters from address
-            records = records.replace('\n', '')
-            records = records.strip()
-            return records
+            recoords = recoords.replace('\n', '')
+            recoords = recoords.strip()
+            return recoords
 
 
 def locate_file(path):
@@ -188,23 +201,23 @@ def save_home_address(address):
         file.write(address)
 
 
-def cords_from_database(name, database):
+def coords_from_database(name, database):
     """Extracting longitude and latitude of targeted record
-     from given GeoDataFrame object, commonly given by osmnx module"""
+     from GeoDataFrame object, commonly given by osmnx module"""
     geometry = database[database.name == name].geometry.iloc[0]
-    cords = cords_from_geometry(geometry)
-    return cords
+    coords = coords_from_geometry(geometry)
+    return coords
 
 
-def cords_from_geometry(geometry):
+def coords_from_geometry(geometry):
     """Extracting longitude and latitude from Point object"""
     return [geometry.centroid.y, geometry.centroid.x]
 
 
-def add_marker_to_map(cords, name, map, type='blue'):
+def add_marker_to_map(coords, name, map, type='blue'):
     """Add marked position into the given map with optional color"""
     folium.Marker(
-        location=cords,
+        location=coords,
         tooltip="Click for details",
         popup=name,
         icon=folium.Icon(color=type),
@@ -220,13 +233,13 @@ if __name__ == "__main__":
     # if setting home was requested by user, only this block is being executed
     if args.home:
         save_home_address(args.home)
-        show_message_and_exit('<Home address have been set. It will be used if place is not mentioned>')
+        message_and_exit('<Home address have been set. It will be used if --place is not specified>')
 
     # use of saved home address if place is not provided by user
     if not args.place:
         home = read_data(HOME_PATH)
         if not home:
-            show_message_and_exit('<Place or home have not been set>')
+            message_and_exit('<Place or home have not been set>')
         args.place = home
 
     # search for random target city
@@ -243,7 +256,7 @@ if __name__ == "__main__":
         if history:
             city_names = return_request_from_history(args.place, args.distance, history)
         else:
-            show_message_and_exit('<Query missing from history, while module OSMNX is not available>')
+            message_and_exit('<Query missing from history, while module OSMNX is not available>')
     
     # if some cities were selected by the script before, they are excluded
     visited = read_data(VISITED_PATH)
@@ -257,26 +270,27 @@ if __name__ == "__main__":
     print(f"Visit ---> '{target_city}'", end='\n\n')
 
     # find target city coordinates
-    target_city_cords = []
-    if city_details.any:
-        target_city_cords = cords_from_database(target_city, city_details)
+    target_city_coords = []
+    if type(city_details) is GeoDataFrame:
+        target_city_coords = coords_from_database(target_city, city_details)
     else:
         # end of execution without osmnx module (phones, tablets...)
-        show_message_and_exit('<Cannot offer more details without osmnx module>')
+        message_and_exit('<Cannot offer more details without osmnx module>')
 
     # create map with location of the city
-    local_map = folium.Map(target_city_cords, zoom_start=MAP_ZOOM)
-    add_marker_to_map(target_city_cords, target_city, local_map, CITY_MARKER_COLOR)
+    local_map = folium.Map(target_city_coords, zoom_start=MAP_ZOOM)
+    add_marker_to_map(target_city_coords, target_city, local_map, CITY_MARKER_COLOR)
 
     # find points of interest around target city
-    point_details = points_within_distance_from_cords(tuple(target_city_cords), POINT_DISTANCE)
-    for row in point_details.itertuples():
-        name = row.name
-        location = cords_from_geometry(row.geometry)
-        add_marker_to_map(location, name, local_map, POINT_MARKER_COLOR)
-        # display name of point if possible
-        if type(name) is str:
-            print(name)
+    point_details = points_within_distance_from_coords(tuple(target_city_coords), args.point_distance)
+    if type(point_details) is GeoDataFrame:
+        for row in point_details.iterfeatures():
+            name = row['properties']['name'] if 'name' in row['properties'].keys() else ''
+            location = row['geometry']['coordinates'][::-1] # coordinates are saved in database in reversed order
+            add_marker_to_map(location, name, local_map, POINT_MARKER_COLOR)
+            # display name of point if possible
+            if type(name) is str:
+                print(name)
 
     # save map on disk
     map_path = os.path.join(SETTINGS_PATH, f'{target_city}.html')
